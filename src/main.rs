@@ -1,111 +1,89 @@
-use std::{collections::HashMap, env::args, ffi::OsStr, fs, path::Path};
+#[macro_use]
+extern crate lazy_static;
 
-fn extract_included_filename(line: &str) -> Option<&str> {
-    let mut start_index = line.find("<");
-    let mut end_index = if start_index.is_some() {
-        line.find(">")
-    } else {
-        None
-    };
+mod config;
+mod generator;
+mod parser;
 
-    if start_index.is_none() && end_index.is_none() {
-        start_index = line.find("\"");
-        end_index = if start_index.is_some() {
-            line[(start_index.unwrap() + 1)..].find("\"")
-        } else {
-            None
-        };
+use clap::{App, Arg};
+use config::Config;
+use generator::MakefileGenerator;
+use parser::Parser;
+use std::error::Error;
 
-        if end_index.is_some() {
-            end_index = Some(start_index.unwrap() + end_index.unwrap() + 1);
-        }
-    }
+fn main() -> Result<(), Box<dyn Error>> {
+    let matches = App::new("makegen")
+        .version("1.0")
+        .author("George Liontos <georgios.liontos@sgdigital.com>")
+        .about("Generate C/C++ makefiles quickly and easily!")
+        .arg(
+            Arg::with_name("compiler")
+                .short("c")
+                .long("compiler")
+                .value_name("COMPILER")
+                .help("Choose what compiler to use when compiling")
+                .default_value_if("extension", Some("c"), "gcc")
+                .default_value_if("extension", Some("cpp"), "g++")
+                .takes_value(true)
+                .min_values(1)
+                .max_values(1),
+        )
+        .arg(Arg::with_name("extension")
+            .short("e")
+            .long("extension")
+            .value_name("EXTENSION")
+            .help("Choose what extensions should the generator look for. It must be c for C files and cpp for C++ files")
+            .takes_value(true)
+            .min_values(1)
+            .max_values(1)
+            .required(true),
+        )
+        .arg(Arg::with_name("bin")
+            .short("b")
+            .long("binary")
+            .value_name("PROGRAM_NAME")
+            .help("Choose what the program of the generated executable should be")
+            .takes_value(true)
+            .min_values(1)
+            .max_values(1)
+            .required(true),
+        )
+        .arg(Arg::with_name("std")
+            .long("std")
+            .value_name("C/C++ Standard")
+            .help("Specifies the standard to use when compiling")
+            .takes_value(true)
+            .default_value_if("extension", Some("c"), "c99")
+            .default_value_if("extension", Some("cpp"), "c++11")
+            .min_values(1)
+            .max_values(1),
+        )
+        .arg(Arg::with_name("opt")
+            .long("opt")
+            .value_name("OPTIMIZATION_LEVEL")
+            .help("Specifies the optimization level to include in the compiler flags")
+            .takes_value(true)
+            .default_value("O0")
+            .min_values(1)
+            .max_values(1),
+        )
+        .arg(Arg::with_name("tests")
+            .short("t")
+            .long("tests")
+            .value_name("TEST_FILE|TEST_DIRECTORY")
+            .help("Specifies the directory or files that are tests files and include a main function")
+            .takes_value(true)
+            .default_value("tests")
+            .multiple(true)
+            .min_values(1),
+        )
+        .get_matches();
 
-    let res = if start_index.is_some() && end_index.is_some() {
-        let start_index = start_index.unwrap() + 1;
-        let end_index = end_index.unwrap();
-        Some(&line[start_index..end_index])
-    } else {
-        None
-    };
-
-    res
-}
-
-#[derive(Debug)]
-struct ExtensionSplittedFile<'fname> {
-    original: &'fname str,
-    filename: &'fname str,
-    extension: Option<&'fname str>,
-}
-
-impl<'fname> ExtensionSplittedFile<'fname> {
-    pub fn new(filename: &'fname str) -> Self {
-        let extension = Path::new(filename).extension().and_then(OsStr::to_str);
-        let mut filename_without_ext = filename;
-        if extension.is_some() {
-            filename_without_ext = &filename[..(filename.len() - extension.unwrap().len() - 1)];
-        }
-        Self {
-            original: filename,
-            filename: filename_without_ext,
-            extension,
-        }
-    }
-
-    #[inline]
-    pub fn with_extension(&self) -> &'fname str {
-        self.original
-    }
-
-    #[inline]
-    pub fn filename(&self) -> &'fname str {
-        self.filename
-    }
-
-    #[inline]
-    pub fn extension(&self) -> Option<&'fname str> {
-        self.extension
-    }
-}
-
-fn get_include_files(source: &str) -> Vec<ExtensionSplittedFile> {
-    let mut include_files = Vec::new();
-    for line in source.lines() {
-        if line.starts_with("#include") {
-            if let Some(include_file) = extract_included_filename(line) {
-                include_files.push(ExtensionSplittedFile::new(include_file));
-            }
-        }
-    }
-    include_files
-}
-
-fn read_file_and_get_include_files<'fname>(filename: String, mut map: HashMap<String, Vec<ExtensionSplittedFile>>) {
-    if let Ok(contents) = fs::read_to_string(&filename) {
-        let source_file = ExtensionSplittedFile::new(&filename);
-        let include_files = get_include_files(&contents);
-        if !map.contains_key(&filename) {
-            map.insert(filename, include_files);
-        }
-    } else {
-        eprintln!("Error while reading file `{}`", filename);
-    }
-}
-
-fn main() {
-    if let Some(fname) = args().skip(1).next() {
-        let mut map = HashMap::new();
-        if let Ok(contents) = fs::read_to_string(&fname) {
-            let source_file = ExtensionSplittedFile::new(&fname);
-            let include_files = get_include_files(&contents);
-            if !map.contains_key(&fname) {
-                map.insert(&fname, include_files);
-            }
-        } else {
-            eprintln!("Error while reading file `{}`", fname);
-        }
-    } else {
-        eprintln!("Please provide an input filename to read");
-    }
+    let config = Config::from_matches(&matches)?;
+    let root_dir = std::env::current_dir()?;
+    let parser = Parser::new(root_dir, &config);
+    let result = parser.parse()?;
+    let generator = MakefileGenerator::new(config, result);
+    generator.generate_makefile()?;
+    Ok(())
 }
