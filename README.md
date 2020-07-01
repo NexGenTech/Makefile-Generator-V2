@@ -53,14 +53,25 @@ For example `makegen --binary=foo --extension=cpp --std=c++17`
 
 ## Tests
 
-`makegen` doesn't inspect each file to check if it has a `main` function. That means if you have multiple files
-(more than one to be exact) which have a `main` function in them then the code will compile but the linker is going to be angry at you. That is going to happen because `makegen` will throw all generated object files to be linked for the `bin` target. The most common reason to have more than one file with a `main` function in it, is to have test cases or tests in general. So `makegen` provides a flag, named `--tests` or `-t` for short, in which you can specify test files or directories with test files and it will create a separate `tests` target for you. This flag defaults to the `tests` folder (it is ok if you don't have such a folder). So lets say we have a folder named `test_suite` which contains our test cases. In that case you must execute: `makegen --binary=foo --extension=cpp --tests=test_suite`
+`makegen` provides an option, named `--tests` or `-t` for short, in which you can specify test files or directories with test files and it will create a separate `tests` target for you. This flag defaults to the `tests` folder (it is ok if you don't have such a folder). So lets say we have a folder named `test_suite` which contains our test cases. In that case you must execute: `makegen --binary=foo --extension=cpp --tests=test_suite`
 This will create a `tests` target in the Makefile, so you can execute `make tests` and compile only your tests.
-`--tests` flag can appear multiple times and specify multiple folders, files that are tests.
+`--tests` option can appear multiple times and specify multiple folders, files that are tests.
 For example let's say in the previous example we have another file named `test_foo.cpp`
 In that case we would execute `makegen --binary=foo --extension=cpp --tests=test_suite --tests=test_foo.cpp`
 
-## More to come
+## Benchmarks
 
-I would also like to make aware the tool about more common file categories that have a `main` function in them such as `examples` or `benchmarks`.
-For any ideas please raise an Issue or contact me directly to georgeliontos98@gmail.com
+Like tests `makegen` provides an option named `--benchmarks` with the same behaviour but generates a benchmarks target.
+
+## Examples
+
+Like tests `makegen` provides an option named `--examples` with the same behaviour but generates an examples target.
+
+## Binaries not falling in the above categories
+
+`makegen` checks every file for a *main* function. If it finds one and the file doesn't fall in the above categories (tests, benchmarks, examples)
+then it creates a separate target named *bin_<filename>* which runs when you run `make`.
+In order for makegen to handle that case (where you can have multiple _unspecified_ binaries) provides an extra option
+named *--main-file* which specifies the file containing the main function that associates with the program name you
+provided with the *--binary* option. By defaul it has the value *main.c* if the extension is c or *main.cpp* if the extension is cpp,
+so if your main file is actually named main.<extension> you don't have to provide that explicitly.

@@ -17,4 +17,5 @@ Cargo.lock
 # End of https://www.gitignore.io/api/rust
 
 .vscode/
+inputs/
 
